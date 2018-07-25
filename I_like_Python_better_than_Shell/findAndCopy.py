@@ -33,14 +33,14 @@ def _modifyName(rawName):
     l[-2] = l[-2]+"x"
     return '.'.join(l)
 
-def printUsage():
+def printManual():
     import textwrap
-    basicInfo = "This script find all the matching files recursively to \
-                the given path and copy them to a given destination. If \
+    basicInfo = "This script finds all the matching files recursively to \
+                the given path and copies them to a given destination. If \
                 a replicated file name appears, the copy of the file will \
                 be renamed. The whole original file system is not changed \
                 at all."
-    print("findAndCopy Usage".center(66,'='))
+    print(" findAndCopy Manual ".center(66,'='))
     print('')
     print(textwrap.fill(basicInfo,66))
     print('')
@@ -60,7 +60,10 @@ if __name__ == '__main__':
         if t[0] in ['-v', '--verbose']:
             verbose = True
         elif t[0] in ['-h','--help']:
-            printUsage()
+            printManual()
+            sys.exit()
+        else:
+            print("Unrecognized Option:" + t[0] + ", script terminates.")
             sys.exit()
     
     findAndCopy(args[0],args[1], args[2], verbose)
