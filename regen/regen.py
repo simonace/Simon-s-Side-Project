@@ -37,13 +37,40 @@ class Module(object):
                     segType = self.sheet.row_values(k)[4]
                     self.regDict[regName].addSegment(Segment(segName, segStart, segEnd, segType))
 
-    def buildModuleRegVerilog(self, projectName, toLowerCase=False):
+    def buildModuleRegVerilog(self, projectName, toLowerCase=False, acknowledge=False):
         if toLowerCase:
             fileName = self.moduleName.lower() + "_regfile"
         else:
             fileName = self.moduleName + "_regfile"
         f = open(fileName + ".v", 'w+')
         ProcessTools.writeHeadComments(f, fileName + ".v")
+
+        if acknowledge:
+            import random
+            acknowledgeList = [ "// This project is solely and wholely for you, Wanying.\n\n",
+                                "// I always imagine, Wanying, I could take your hand and see the world together with you.\n\n",
+                                "// I am so enchanted by your beautiful innocent eyes, and your lovely wink, Wanying.\n\n",
+                                "// I cherish you, Wanying, forever and always.\n\n"
+                              ]
+            rndAck = random.randint(0,3)
+
+        if acknowledge:
+            if rndAck==0:
+                f.write(acknowledgeList[rndAck])
+
+        f.write("module " + fileName + "(\n")
+
+        if acknowledge:
+            if rndAck==1:
+                f.write(acknowledgeList[rndAck])
+
+        if acknowledge:
+            if rndAck==2:
+                f.write(acknowledgeList[rndAck])
+
+        if acknowledge:
+            if rndAck==3:
+                f.write(acknowledgeList[rndAck])
 
         f.write("endmodule\n")
         f.close()
@@ -123,7 +150,7 @@ class Project(object):
 
     def buildProjectRegVerilog(self):
         for m in self.moduleDict.values():
-            m.buildModuleRegVerilog(projectName=self.projectName)
+            m.buildModuleRegVerilog(projectName=self.projectName, acknowledge=True)
         
 
 class ProcessTools(object):
