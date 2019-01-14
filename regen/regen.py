@@ -39,7 +39,7 @@ class Module(object):
                     segType = self.sheet.row_values(k)[4]
                     segPortIn = self.sheet.row_values(k)[5].replace(' ','')
                     segPortOut = self.sheet.row_values(k)[6].replace(' ','')
-                    self.regDict[regName].addSegment(Segment(segName, segStart, segEnd, segType, segPortIn, segPortOut))
+                    self.regDict[regName].addSegment(Segment(segName, regName, segStart, segEnd, segType, segPortIn, segPortOut))
 
     def buildModuleRegVerilog(self, projectName, toLowerCase=False, acknowledge=False):
         if toLowerCase:
@@ -49,7 +49,6 @@ class Module(object):
         f = open(fileName + ".v", 'w+')
         ProcessTools.writeHeadComments(f, fileName + ".v")
 
-        #
         if acknowledge:
             import random
             acknowledgeList = [ "// This project is solely and wholely for you, Wanying.\n\n",
@@ -77,9 +76,19 @@ class Module(object):
             if acknowledge:
                 if rndAck==1:
                     f.write(acknowledgeList[rndAck])
+            port_t_list = []
             for offset in self.usedOffsetAddrList:
                 reg = self.regDict[self.regNameDict[offset]]
-                f.write("// " + reg.regName + "\n")
+                #f.write("// " + reg.regName + "\n")
+                for segStartIndex in reg.segStartIndexList:
+                    #f.write("// " + ' '*4 + reg.segDict[segStartIndex].segName + "\n")
+                    for t in reg.segDict[segStartIndex].portOfSeg():
+                        port_t_list.append(t)
+            for tt in port_t_list[0:-1]:
+                ProcessTools.writePortLine(f=f, portName=tt[0], inOut=tt[1], width=tt[2], isReg=tt[3], withComma=True)
+            t = port_t_list[-1]
+            ProcessTools.writePortLine(f=f, portName=t[0], inOut=t[1], width=t[2], isReg=t[3], withComma=False)
+            f.write(");\n\n")
             
 
         if acknowledge:
@@ -128,14 +137,33 @@ class Register(object):
 
 class Segment(object):
 
-    def __init__(self, segName, start, end, segType, segPortIn, segPortOut):
+    def __init__(self, segName, regName, start, end, segType, segPortIn, segPortOut):
         self.segName = segName
+        self.regName = regName
         self.start = start
         self.end = end
-        self.width = self.start - self.end + 1
+        self.width = self.end - self.start + 1
         self.segType = segType
         self.segPortIn = segPortIn
         self.segPortOut = segPortOut
+
+    def portOfSeg(self):
+        #port in
+        if self.segType == "const":
+            yield (self.regName + "_" + self.segName + "const_value", "input", self.width, False)
+        elif self.segPortIn == "y" or self.segPortIn == "yes":
+            yield (self.regName + "_" + self.segName + "_set", "input", 1, False)
+            yield (self.regName + "_" + self.segName + "_set_value", "input", self.width, False)
+        else:
+            if self.segType == "cw0" or self.segType == "ro":
+                yield (self.regName + "_" + self.segName + "_set", "input", 1, False)
+                yield (self.regName + "_" + self.segName + "_set_value", "input", self.width, False)
+
+        if self.segType != "ro" and self.segType != "const":
+            if self.segPortOut == "y" or self.segPortOut == "yes":
+                yield (self.regName + "_" + self.segName, "output", self.width, True)
+
+        
 
 
 class Project(object):
