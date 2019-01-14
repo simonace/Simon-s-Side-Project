@@ -1,12 +1,13 @@
 import xlrd
 
 class Module(object):
-    def __init__(self, moduleName, baseAddressInt, sheet):
+    def __init__(self, moduleName, baseAddressInt, busType, sheet):
         self.usedOffsetAddrList = []
         self.regNameDict = {}
         self.regDict = {}
         self.regStartRowList = []
         self.moduleName=moduleName
+        self.busType = busType
         self.baseAddressInt = baseAddressInt
         self.sheet = sheet
         self._sheetProcess()
@@ -45,6 +46,7 @@ class Module(object):
         f = open(fileName + ".v", 'w+')
         ProcessTools.writeHeadComments(f, fileName + ".v")
 
+        #
         if acknowledge:
             import random
             acknowledgeList = [ "// This project is solely and wholely for you, Wanying.\n\n",
@@ -135,6 +137,8 @@ class Project(object):
             if not(sheet.nrows == 0 and sheet.ncols == 0):
                 if sheet.row_values(0)[0] == "Module Name":
                     moduleName = sheet.row_values(0)[1]
+                    if sheet.row_values(2)[0] == "Bus Type":
+                        busType = ProcessTools.busTypeProcess(sheet.row_values(2)[1])
                     if sheet.row_values(1)[0] == "Base Address":
                         addrInt = ProcessTools.baseAddressProcess(sheet.row_values(1)[1])
                         if addrInt in self.usedBaseAddrList:
@@ -146,7 +150,7 @@ class Project(object):
                             if moduleName in self.moduleDict:
                                 raise Exception("Modules with same module name exist")
                             else:
-                                self.moduleDict[moduleName] = Module(moduleName, addrInt, sheet)
+                                self.moduleDict[moduleName] = Module(moduleName, addrInt, busType, sheet)
 
     def buildProjectRegVerilog(self):
         for m in self.moduleDict.values():
@@ -174,6 +178,13 @@ class ProcessTools(object):
             raise Exception("Offset address should aligh with word")
         else:
             return addrInt
+
+    def busTypeProcess(rawString):
+        busType = rawString.replace(' ','').lower()
+        if busType == "apb" or busType == "ahb":
+            return busType
+        else:
+            raise Exception("Bus Type must be either APB or AHB")
 
     def indexProcess(rawString):
         import re
