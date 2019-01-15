@@ -94,10 +94,41 @@ class Module(object):
         if acknowledge:
             if rndAck==2:
                 f.write(acknowledgeList[rndAck])
+        if self.busType == "apb":
+            ProcessTools.writeRegWireLine(f=f, name="w_en", regWire="wire", width=1)
+            ProcessTools.writeRegWireLine(f=f, name="r_en", regWire="wire", width=1)
+            ProcessTools.writeRegWireLine(f=f, name="PWDATA_in", regWire="wire", width=32)
+            ProcessTools.writeRegWireLine(f=f, name="PADDR_gated", regWire="wire", width=10)
+            for offset in self.usedOffsetAddrList:
+                reg = self.regDict[self.regNameDict[offset]]
+                if reg.hasWr:
+                    ProcessTools.writeRegWireLine(f=f, name=reg.regName+"_w", regWire="wire", width=10)
+            f.write("\n\n")
 
         if acknowledge:
             if rndAck==3:
                 f.write(acknowledgeList[rndAck])
+
+        if self.busType == "apb":
+            for offset in self.usedOffsetAddrList:
+                reg = self.regDict[self.regNameDict[offset]]
+                if reg.hasWr:
+                    f.write("assign " + reg.regName + "_w = ((w_en == 1'b1) & (PADDR_gated == " + reg.getHexOffsetVerilog() + ")) ? 1'b1 : 1'b0;\n")
+            f.write('\n\n')
+            f.write("// PRDATA Read\n")
+            f.write("always @(*) begin\n")
+            f.write(' '*4 + "case({r_en,PADDR_gated})\n")
+            for offset in self.usedOffsetAddrList:
+                reg = self.regDict[self.regNameDict[offset]]
+                if reg.hasRd:
+                    f.write(' '*8 + ("{1'b1, "+reg.getHexOffsetVerilog()+'}').ljust(18) + ":   " + "begin\n")
+                    f.write(' '*30 + "PRDATA = " + reg.getReadConcatRegister() + ";\n")
+                    f.write(' '*30 + "end\n")
+            f.write(' '*8 + "default".ljust(18) + ":   begin\n")
+            f.write(' '*30 + "PRDATA = 32'b0;\n")
+            f.write(' '*30 + "end\n")
+            f.write(' '*4 + "endcase\n")
+            f.write("end\n")
 
         f.write("endmodule\n")
         f.close()
@@ -117,6 +148,8 @@ class Register(object):
         self.segStartIndexList = []
         self.segNameList = []
         self.segDict = {}
+        self.hasWr = False
+        self.hasRd = False
 
     def addSegment(self, segment):
         start = segment.start
@@ -134,7 +167,40 @@ class Register(object):
             self.segStartIndexList.append(start)
             self.segStartIndexList.sort()
             self.segDict[start] = segment
+        if segment.segType == "wr" or segment.segType == "wo":
+            self.hasWr = True
+        if segment.segType != "wo":
+            self.hasRd = True
 
+    def getHexOffsetVerilog(self):
+        return "10'h" + hex(self.offsetInt)[2:]
+
+    def getReadConcatRegister(self):
+        concatRegString = "}"
+        if len(self.segStartIndexList)>1:
+            for i in range(len(self.segStartIndexList)-1):
+                if i ==0:
+                    if self.segDict[self.segStartIndexList[i]].start >0:
+                        concatRegString = self.segDict[self.segStartIndexList[i]].getReadValueVerilog() + ', ' + str(self.segDict[self.segStartIndexList[i]].start) + "'b0" + concatRegString
+                    else:
+                        concatRegString = self.segDict[self.segStartIndexList[i]].getReadValueVerilog() +  concatRegString
+                else:
+                    concatRegString = self.segDict[self.segStartIndexList[i]].getReadValueVerilog() + ', ' + concatRegString
+                if self.segDict[self.segStartIndexList[i+1]].start > self.segDict[self.segStartIndexList[i]].end + 2:
+                    concatRegString = str(self.segDict[self.segStartIndexList[i+1]].start - self.segDict[self.segStartIndexList[i]].end -1) + "'b0, " + concatRegString
+            concatRegString = self.segDict[self.segStartIndexList[-1]].getReadValueVerilog() + ', ' + concatRegString
+            if self.segDict[self.segStartIndexList[-1]].end <31:
+                concatRegString = str(31-self.segDict[self.segStartIndexList[-1]].end) + "'b0, " + concatRegString
+        else:
+            if self.segDict[self.segStartIndexList[0]].start >0:
+                concatRegString = self.segDict[self.segStartIndexList[0]].getReadValueVerilog() + ', ' + str(self.segDict[self.segStartIndexList[0]].start) + "'b0" + concatRegString
+            else:
+                concatRegString = self.segDict[self.segStartIndexList[0]].getReadValueVerilog() +  concatRegString
+            if self.segDict[self.segStartIndexList[0]].end <31:
+                concatRegString = str(31-self.segDict[self.segStartIndexList[0]].end) + "'b0, " + concatRegString
+        return '{' + concatRegString
+        
+        
 class Segment(object):
 
     def __init__(self, segName, regName, start, end, segType, segPortIn, segPortOut):
@@ -150,7 +216,7 @@ class Segment(object):
     def portOfSeg(self):
         #port in
         if self.segType == "const":
-            yield (self.regName + "_" + self.segName + "const_value", "input", self.width, False)
+            yield (self.regName + "_" + self.segName + "_const_value", "input", self.width, False)
         elif self.segPortIn == "y" or self.segPortIn == "yes":
             yield (self.regName + "_" + self.segName + "_set", "input", 1, False)
             yield (self.regName + "_" + self.segName + "_set_value", "input", self.width, False)
@@ -163,6 +229,13 @@ class Segment(object):
             if self.segPortOut == "y" or self.segPortOut == "yes":
                 yield (self.regName + "_" + self.segName, "output", self.width, True)
 
+    def getReadValueVerilog(self):
+        if self.segType == "const":
+            return self.regName + "_" + self.segName + "_const_value"
+        elif self.segType == "wo":
+            return str(self.width) + "'b0"
+        else:
+            return self.regName + "_" + self.segName
         
 
 
@@ -293,6 +366,27 @@ class ProcessTools(object):
         l = l + '\n'
         if indentation>0:
             l = ' '*indentation + l
+        if width>0:
+            f.write(l)
+
+    def writeRegWireLine(f, name, regWire, width=1, withSemiComma=True, widthStartCol=10, nameStartCol=20, cmtStartCol=48, cmt="", indentation=0):
+        l = ""
+        if regWire.lower() in ['r', 'reg']:
+            l = l + "reg"
+        elif regWire.lower() in ['w', 'wire']:
+            l = l + "wire"
+        l = l + ' '*(widthStartCol-len(l))
+        if width>1:
+            l = l + '[' + str(width-1) + ":0]"
+        l = l + ' '*(nameStartCol-len(l))
+        l = l + name
+        if withSemiComma:
+            l = l + ";"
+        if cmt:
+            l = l + ' '*(cmtStartCol-len(l)) + "//" + cmt
+        if indentation>0:
+            l = ' '*indentation + l
+        l = l + '\n'
         if width>0:
             f.write(l)
     
