@@ -110,6 +110,10 @@ class Module(object):
                 f.write(acknowledgeList[rndAck])
 
         if self.busType == "apb":
+            f.write("assign PWDATA_in = ((PSEL==1'b1) & (PWRITE==1'b1)) ? PWDATA : 32'd0;\n")
+            f.write("assign PADDR_gated = (PSEL==1'b1) ? PADDR : 10'h000;\n")
+            f.write("assign w_en = PWRITE & PSEL;\n")
+            f.write("assign r_en = PSEL & (~PWRITE) & PENABLE;\n\n")
             for offset in self.usedOffsetAddrList:
                 reg = self.regDict[self.regNameDict[offset]]
                 if reg.hasWr:
@@ -128,7 +132,42 @@ class Module(object):
             f.write(' '*30 + "PRDATA = 32'b0;\n")
             f.write(' '*30 + "end\n")
             f.write(' '*4 + "endcase\n")
-            f.write("end\n")
+            f.write("end\n\n")
+
+        if self.busType == "apb":
+            for offset in self.usedOffsetAddrList:
+                reg = self.regDict[self.regNameDict[offset]]
+                for segStartIndex in reg.segStartIndexList:
+                    seg = reg.segDict[segStartIndex]
+                    f.write("// " + seg.regName + " - " + seg.segName + "\n")
+                    if seg.segType == "cw0" or seg.segType == "ro" or seg.segType == "wr" or seg.segType == "wo":
+                        if seg.segPortIn == 'y':
+                            f.write("always @(posedge PCLK or negedge PRESETn) begin\n")
+                        else:
+                            f.write("always @(posedge PCLKG or negedge PRESETn) begin\n")
+                        f.write(' '*4 + "if (!PRESETn) begin\n")
+                        f.write(' '*8 + seg.regName + "_" + seg.segName + " <= " + str(seg.width) + "'b0;\n")
+                        f.write(' '*4 + "end\n")
+                        f.write(' '*4 + "else if (" + seg.regName + '_' + seg.segName + "_w) begin\n")
+                        if seg.segType == "cw0":
+                            if seg.width>1:
+                                f.write(' '*8 + seg.regName + '_' + seg.segName + " <= " + seg.regName + '_' + seg.segName + " & PWDATA_gated[" + str(seg.end) + ":" + str(seg.start) + "];\n")
+                            else:
+                                f.write(' '*8 + seg.regName + '_' + seg.segName + " <= " + seg.regName + '_' + seg.segName + " & PWDATA_gated[" + str(seg.end) + "];\n")
+                        else:
+                            if seg.width>1:
+                                f.write(' '*8 + seg.regName + '_' + seg.segName + " <= PWDATA_gated[" + str(seg.end) + ":" + str(seg.start) + "];\n")
+                            else:
+                                f.write(' '*8 + seg.regName + '_' + seg.segName + " <= PWDATA_gated[" + str(seg.end) + "];\n")
+                        f.write(' '*4 + "end\n")
+                        if seg.segPortIn == "y":
+                            f.write(' '*4 + "else if (" + seg.regName + '_' + seg.segName + "_set) begin\n")
+                            f.write(' '*8 + seg.regName + '_' + seg.segName + " <= " + seg.regName + '_' + seg.segName + "_set_value;\n")
+                            f.write(' '*4 + "end\n")
+                        f.write("end\n\n")
+                    elif seg.segType == "const":
+                        f.write("// const reg\n\n")
+                    
 
         f.write("endmodule\n")
         f.close()
@@ -212,6 +251,24 @@ class Segment(object):
         self.segType = segType
         self.segPortIn = segPortIn
         self.segPortOut = segPortOut
+        self._fixedSegInout()
+
+    def _fixedSegInout(self):
+        if self.segType == "cw0" or self.segType == "ro":
+            self.segPortIn = 'y'
+        if self.segType == "const":
+            self.segPortIn = 'n'
+            self.segPortOut = 'n'
+        if self.segType == "wo":
+            self.segPortOut = 'y'
+        if self.segPortOut == "y" or self.segPortOut == "yes":
+            self.segPortOut = 'y'
+        if self.segPortIn == "y" or self.segPortIn == "yes":
+            self.segPortIn = 'y'
+        if self.segPortOut == "n" or self.segPortOut == "no":
+            self.segPortOut = 'n'
+        if self.segPortIn == "n" or self.segPortIn == "no":
+            self.segPortIn = 'n'
 
     def portOfSeg(self):
         #port in
