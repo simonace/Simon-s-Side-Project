@@ -39,7 +39,8 @@ class Module(object):
                     segType = self.sheet.row_values(k)[4]
                     segPortIn = self.sheet.row_values(k)[5].replace(' ','')
                     segPortOut = self.sheet.row_values(k)[6].replace(' ','')
-                    self.regDict[regName].addSegment(Segment(segName, regName, segStart, segEnd, segType, segPortIn, segPortOut))
+                    segDefaultValue = self.sheet.row_values(k)[7].replace(' ','')
+                    self.regDict[regName].addSegment(Segment(segName, regName, segStart, segEnd, segType, segPortIn, segPortOut, segDefaultValue))
 
     def buildModuleRegVerilog(self, projectName, toLowerCase=False, acknowledge=False):
         if toLowerCase:
@@ -146,7 +147,7 @@ class Module(object):
                         else:
                             f.write("always @(posedge PCLKG or negedge PRESETn) begin\n")
                         f.write(' '*4 + "if (!PRESETn) begin\n")
-                        f.write(' '*8 + seg.regName + "_" + seg.segName + " <= " + str(seg.width) + "'b0;\n")
+                        f.write(' '*8 + seg.regName + "_" + seg.segName + " <= " + seg.segDefaultValue + ";\n")
                         f.write(' '*4 + "end\n")
                         f.write(' '*4 + "else if (" + seg.regName + '_' + seg.segName + "_w) begin\n")
                         if seg.segType == "cw0":
@@ -242,7 +243,7 @@ class Register(object):
         
 class Segment(object):
 
-    def __init__(self, segName, regName, start, end, segType, segPortIn, segPortOut):
+    def __init__(self, segName, regName, start, end, segType, segPortIn, segPortOut, segDefaultValue):
         self.segName = segName
         self.regName = regName
         self.start = start
@@ -252,6 +253,13 @@ class Segment(object):
         self.segPortIn = segPortIn
         self.segPortOut = segPortOut
         self._fixedSegInout()
+        self._processDefaultValue(segDefaultValue)
+
+    def _processDefaultValue(self, rawHex):
+        if rawHex[:2].lower() == "0x":
+            self.segDefaultValue = str(self.width) + "'h" + rawHex[2:]
+        else:
+            raise Exception("Default Value Format Error!")
 
     def _fixedSegInout(self):
         if self.segType == "cw0" or self.segType == "ro":
