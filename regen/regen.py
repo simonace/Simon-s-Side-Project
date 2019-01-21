@@ -173,9 +173,38 @@ class Module(object):
         f.write("endmodule\n")
         f.close()
 
-        
-        
-                    
+    def buildModuleHeaderFile(self, projectName, toLowerCase=False):
+        if toLowerCase:
+            fileName = self.moduleName.lower()
+        else:
+            fileName = self.moduleName
+        f = open(fileName + ".h", 'w+')
+        ProcessTools.writeHeadComments(f, fileName + ".h")
+
+        f.write("typedef struct{\n")
+        for offset in self.usedOffsetAddrList:
+            reg = self.regDict[self.regNameDict[offset]]
+            f.write(' '*4 + "union{\n")
+            f.write((' '*8 + "__RW    uint32_t    " + self.moduleName.upper() + "_" + reg.regName.upper() + ";").ljust(66) + "// 0x" + reg.getHexOffsetVerilog()[4:] + " : " +self.moduleName.upper() + "_" + reg.regName.upper() + '\n')
+            f.write(' '*8 + "struct{\n")
+            lastSegEnd = -1
+            for segStartIndex in reg.segStartIndexList:
+                seg = reg.segDict[segStartIndex]
+                if seg.start - lastSegEnd == 2:
+                    f.write((' '*12 + "__RW    uint32_t    "  + ("RESERVED_" + str(lastSegEnd+1)).ljust(20) + ": 1;").ljust(66) + "// " + str(lastSegEnd+1) + ", Reserved\n")
+                elif seg.start - lastSegEnd > 2:
+                    f.write((' '*12 + "__RW    uint32_t    "  + ("RESERVED_" + str(lastSegEnd+1) + "_" + str(seg.start-1)).ljust(20) + ": " + str(seg.start - lastSegEnd-1) + ";").ljust(66) + "// " + str(lastSegEnd+1) + ":" + str(seg.start-1) + ", Reserved\n")
+                f.write((' '*12 + "__RW    uint32_t    " + seg.segName.upper().ljust(20) + ": " + str(seg.width) + ";").ljust(66) + "// " + str(seg.start) + ":" + str(seg.end) + "," + seg.segName.upper() + "\n")
+                lastSegEnd = seg.end
+            if lastSegEnd == 30:
+                f.write((' '*12 + "__RW    uint32_t    "  + ("RESERVED_31").ljust(20) + ": 1;").ljust(66) + "// 31, Reserved\n")
+            elif lastSegEnd < 30:
+                f.write((' '*12 + "__RW    uint32_t    "  + ("RESERVED_" + str(lastSegEnd+1) + "_31").ljust(20) + ": " + str(32 - lastSegEnd-1) + ";").ljust(66) + "// " + str(lastSegEnd+1) + ":31, Reserved\n")
+            f.write(' '*8 + "} " +self.moduleName.upper() + "_" + reg.regName.upper() + "_BIT;\n")
+            f.write(' '*4 + "};\n\n")
+        f.write("} " + self.moduleName.upper() + "_TYPE;\n\n")
+
+        f.close()
             
 
 
@@ -339,6 +368,10 @@ class Project(object):
     def buildProjectRegVerilog(self):
         for m in self.moduleDict.values():
             m.buildModuleRegVerilog(projectName=self.projectName, acknowledge=True)
+
+    def buildProjectHeaderFile(self):
+        for m in self.moduleDict.values():
+            m.buildModuleHeaderFile(projectName=self.projectName)
         
 
 class ProcessTools(object):
@@ -468,5 +501,6 @@ if __name__ == "__main__":
                 for s in r.segNameList:
                     print(s)
     p.buildProjectRegVerilog()
+    p.buildProjectHeaderFile()
     
                     
