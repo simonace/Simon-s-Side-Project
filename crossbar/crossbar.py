@@ -77,6 +77,87 @@ class Crossbar(object):
         if width>0:
             f.write(l)
 
+    def _writeFuncOnPinAssignment(self, f, co, orLogicList):
+        f.write(("assign " + self.funcDictByRow[co[0]].funcName + "_on_" + self.portDictByIndex[co[1]].portName).ljust(25))
+        f.write("=".ljust(8))
+        if len(orLogicList) > 0:
+            f.write("~(")
+            l = len(orLogicList)
+            upTo = 4
+            while upTo<l:
+                if upTo>4:
+                    f.write(' '*33)
+                for i in range(upTo-4, upTo):
+                    f.write(orLogicList[i] + " | ")
+                f.write('\n')
+                upTo = upTo + 4
+            if upTo>4:
+                f.write(' '*33)
+            for i in range(upTo-4, l-1):
+                f.write(orLogicList[i] + " | ")
+            f.write(orLogicList[l-1] + ") &\n")
+            f.write(' '*33)
+        f.write(self.funcDictByRow[co[0]].funcName + "_ON & " + self.portDictByIndex[co[1]].portName + "_not_SKIP;\n\n")
+
+    def _writePinHasFunc(self, f, pinName, funcList):
+        f.write(("assign " + pinName + "_has_func").ljust(25))
+        f.write("=".ljust(8))
+        if len(funcList) == 0:
+            f.write("1'b0;\n")
+        else:
+            l = len(funcList)
+            upTo = 4
+            while upTo<l:
+                if upTo>4:
+                    f.write(' '*33)
+                for i in range(upTo-4, upTo):
+                    f.write(funcList[i] + " | ")
+                f.write('\n')
+                upTo = upTo + 4
+            if upTo>4:
+                f.write(' '*33)
+            for i in range(upTo-4, l-1):
+                f.write(funcList[i] + " | ")
+            f.write(funcList[l-1] + ";\n\n")
+
+    def _writePinDout(self, f, pinName, funcList):
+        f.write(("assign " + pinName + "_out").ljust(25))
+        f.write("=".ljust(8))
+        l = len(funcList)
+        upTo = 2
+        while upTo<l:
+            if upTo>2:
+                f.write(' '*33)
+            for i in range(upTo-2, upTo):
+                f.write(funcList[i] + " | ")
+            f.write('\n')
+            upTo = upTo + 2
+        if upTo>2:
+            f.write(' '*33)
+        for i in range(upTo-2, l-1):
+            f.write(funcList[i] + " | ")
+        f.write(funcList[l-1] + ";\n\n")
+
+    def _writeFuncIn(self, f, funcIn, pinList):
+        f.write(("assign " + funcIn).ljust(25))
+        f.write("=".ljust(8))
+        l = len(pinList)
+        upTo = 2
+        while upTo<1:
+            if upTo>2:
+                f.write(' '*33)
+            for i in range(upTo-2, upTo):
+                f.write(pinList[i] + " | ")
+            f.write('\n')
+            upTo = upTo + 2
+        if upTo>2:
+            f.write(' '*33)
+        for i in range(upTo-2, l-1):
+            f.write(pinList[i] + " | ")
+        f.write(pinList[l-1] + ";\n\n")
+        
+                    
+
     def writeVerilog(self, fileName, headCommentLength=66):
         f = open(fileName + ".v", 'w+')
         from datetime import datetime
@@ -98,6 +179,11 @@ class Crossbar(object):
             portName = p.portName
             self._writePortLine(f=f, portName=portName+"_out", inOut="out", isReg=False)
             self._writePortLine(f=f, portName=portName+"_in", inOut="in", isReg=False)
+        f.write("// GPIO input and output\n")
+        for p in self.portDictByIndex.values():
+            portName = p.portName
+            self._writePortLine(f=f, portName=portName+"_gpio_din", inOut="out", isReg=False)
+            self._writePortLine(f=f, portName=portName+"_gpio_dout", inOut="in", isReg=False)
         f.write("// Functions' input and/or output\n")
         for func in self.funcDictByRow.values():
             funcName = func.funcName
@@ -133,12 +219,77 @@ class Crossbar(object):
         for p in self.portDictByIndex.values():
             portNotSkip = p.portName + "_not_SKIP"
             self._writeRegWireLine(f=f, name=portNotSkip, regWire="wire")
-
+        for p in self.portDictByIndex.values():
+            portHasFunc = p.portName + "_has_func"
+            self._writeRegWireLine(f=f, name=portHasFunc, regWire="wire")
 
         f.write("\n"*2)
         #logic assignment
+        f.write("// not skip logic\n")
         for p in self.portDictByIndex.values(): 
             f.write("assign " + p.portName + "_not_SKIP = ~" + p.portName + "_SKIP;\n")
+
+        f.write('\n'*2)
+        f.write("// pin has func logic\n")
+        for p in self.portDictByIndex.values():
+            funcOnPinList = []
+            for co in self.crossCoList:
+                if co[1] == p.index:
+                    funcOnPinList.append(self.funcDictByRow[co[0]].funcName + "_on_" + self.portDictByIndex[co[1]].portName)
+            self._writePinHasFunc(f=f, pinName=p.portName, funcList=funcOnPinList)
+
+        f.write("\n"*2)
+        f.write("// func on pin logic\n")
+        for co in self.crossCoList:
+            upLeft = []
+            for i in range(2,co[0]+1):
+                for j in range(2,co[1]+1):
+                    if (i,j) in self.crossCoList:
+                        if (i,j) != co:
+                            upLeft.append(self.funcDictByRow[i].funcName + "_on_" + self.portDictByIndex[j].portName)
+            self._writeFuncOnPinAssignment(f=f, co=co, orLogicList=upLeft)
+
+        f.write('\n'*2)
+        f.write("// dout logic\n")
+        for p in self.portDictByIndex.values():
+            funcDoutList = []
+            for co in self.crossCoList:
+                if co[1] == p.index:
+                    if self.funcDictByRow[co[0]].funcDir.lower() == "dio":
+                        funcDoutList.append("(" + self.funcDictByRow[co[0]].funcName + "_out & " + self.funcDictByRow[co[0]].funcName + "_on_" + self.portDictByIndex[co[1]].portName + ")")
+                    elif self.funcDictByRow[co[0]].funcDir.lower() == "do":
+                        funcDoutList.append("(" + self.funcDictByRow[co[0]].funcName + " & " + self.funcDictByRow[co[0]].funcName + "_on_" + self.portDictByIndex[co[1]].portName + ")")
+            funcDoutList.append("(" + p.portName + "_gpio_dout & ~" + p.portName + "_has_func)")
+            self._writePinDout(f=f, pinName=p.portName, funcList=funcDoutList)
+
+        f.write('\n'*2)
+        f.write("// func in logic\n")
+        for func in self.funcDictByRow.values():
+            if func.funcDir.lower() == "di" or func.funcDir.lower() == "dio":
+                pinList = []
+                for co in self.crossCoList:
+                    if co[0] == func.row:
+                        pinList.append("(" + self.portDictByIndex[co[1]].portName + "_in & " + self.funcDictByRow[co[0]].funcName + "_on_" + self.portDictByIndex[co[1]].portName + ")")
+                if func.funcDir.lower() == "di":
+                    funcIn = func.funcName
+                else:
+                    funcIn = func.funcName + "_in"
+                self._writeFuncIn(f=f, funcIn=funcIn, pinList=pinList)
+
+        f.write('\n'*2)
+        f.write("// gpio in\n")
+        for p in self.portDictByIndex.values():
+            f.write(("assign " + p.portName + "_gpio_din").ljust(25) + "=".ljust(8) + p.portName + "_in;\n\n")
+
+        f.write("endmodule")
+            
+                    
+                    
+        
+
+        f.write('\n'*3)
+            
+                        
         
         f.close()
             
